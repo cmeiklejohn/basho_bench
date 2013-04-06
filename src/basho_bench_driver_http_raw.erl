@@ -242,13 +242,25 @@ run(put_file, _, _, State) ->
 
 run(pipeline_post, KeyGen, ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
+    Key = KeyGen(),
     PipelinePath = State#state.pipeline_path,
-    PipelineUrl = pipeline_url(NextUrl, PipelinePath, KeyGen, State#state.path_params),
-    ?DEBUG("Request URL: ~p\n", [PipelineUrl]),
-    case do_post(PipelineUrl, [{body_on_success, true}], ValueGen) of
+    PipelineUrl = pipeline_url(NextUrl, PipelinePath, Key, State#state.path_params),
+    case do_post(PipelineUrl, [], ValueGen) of
         {ok, _Code, _Header, _Body} ->
             {ok, S2};
+        {error, {http_error, "404"}} ->
+            %% If the pipeline doesn't exist yet, create it.
+            PipelinesUrl = pipelines_url(NextUrl, PipelinePath, State#state.path_params),
+            PipelinesGen = fun() -> generate_pipeline(Key) end,
+            case do_post(PipelinesUrl, [], PipelinesGen) of
+                {ok, _Code, _Header, _Body} ->
+                    {ok, S2};
+                {error, Reason} ->
+                    ?DEBUG("Pipeline creation failed: ~p.\n", [Reason]),
+                    {error, Reason, S2}
+            end;
         {error, Reason} ->
+            ?DEBUG("Pipeline ingestion failed: ~p.\n", [Reason]),
             {error, Reason, S2}
     end;
 
@@ -338,8 +350,13 @@ url(BaseUrl, KeyGen, Params) when is_function(KeyGen) ->
 url(BaseUrl, Key, Params) ->
     BaseUrl#url { path = lists:concat([BaseUrl#url.path, '/', Key, Params]) }.
 
-pipeline_url(BaseUrl, PipelinePath, KeyGen, Params) ->
-    BaseUrl#url { path = lists:concat([PipelinePath, '/', KeyGen(), Params]) }.
+pipeline_url(BaseUrl, PipelinePath, KeyGen, Params) when is_function(KeyGen) ->
+    BaseUrl#url { path = lists:concat([PipelinePath, '/', KeyGen(), Params]) };
+pipeline_url(BaseUrl, PipelinePath, Key, Params) ->
+    BaseUrl#url { path = lists:concat([PipelinePath, '/', Key, Params]) }.
+
+pipelines_url(BaseUrl, PipelinePath, Params) ->
+    BaseUrl#url { path = lists:concat([PipelinePath, Params]) }.
 
 search_url(BaseUrl, SolrPath, SearchGen) ->
     Params = if is_function(SearchGen) ->
@@ -526,6 +543,10 @@ send_request(Url, Headers, Method, Body, Options, Count) ->
             end
     end.
 
+generate_pipeline(Key) ->
+    Fittings = [{struct, [{name, foo}, {module, riak_pipe_w_pass}, {arg, undefined}]}],
+    Body = {struct, [{name, Key}, {fittings, Fittings}]},
+    mochijson2:encode(Body).
 
 should_retry({error, send_failed})       -> true;
 should_retry({error, connection_closed}) -> true;
