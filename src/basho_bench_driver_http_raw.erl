@@ -242,17 +242,19 @@ run(put_file, _, _, State) ->
 
 run(pipeline_post, KeyGen, ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
-    Key = KeyGen(),
+    Key = generate_pipeline_name(KeyGen),
     PipelinePath = State#state.pipeline_path,
     PipelineUrl = pipeline_url(NextUrl, PipelinePath, Key, State#state.path_params),
-    case do_post(PipelineUrl, [], ValueGen) of
-        {ok, _Code, _Header, _Body} ->
+    ?DEBUG("Pipeline key: ~p.\n", [Key]),
+    case do_post(PipelineUrl, [{'Content-Type', 'application/json'}], ValueGen) of
+        ok ->
             {ok, S2};
         {error, {http_error, "404"}} ->
+            ?DEBUG("Pipeline does not exist, creating.\n", []),
             %% If the pipeline doesn't exist yet, create it.
             PipelinesUrl = pipelines_url(NextUrl, PipelinePath, State#state.path_params),
             PipelinesGen = fun() -> generate_pipeline(Key) end,
-            case do_post(PipelinesUrl, [], PipelinesGen) of
+            case do_post(PipelinesUrl, [{'Content-Type', 'application/json'}], PipelinesGen) of
                 {ok, _Code, _Header, _Body} ->
                     {ok, S2};
                 {error, Reason} ->
@@ -416,7 +418,14 @@ do_put(Url, Headers, ValueGen) ->
     end.
 
 do_post(Url, Headers, ValueGen) ->
-    case send_request(Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
+    DefaultedHeaders = case proplists:get_value('Content-Type', Headers) of
+        undefined ->
+            Headers ++ [{'Content-Type', 'application/octet-stream'}];
+        _ ->
+            Headers
+    end,
+
+    case send_request(Url, DefaultedHeaders,
                       post, ValueGen(), [{response_format, binary}]) of
         {ok, "201", _Header, _Body} ->
             ok;
@@ -543,10 +552,18 @@ send_request(Url, Headers, Method, Body, Options, Count) ->
             end
     end.
 
+generate_fitting() ->
+    {struct, [{name, <<"foo">>},
+              {module, <<"riak_pipe_w_pass">>},
+              {arg, <<"">>}]}.
+
 generate_pipeline(Key) ->
-    Fittings = [{struct, [{name, foo}, {module, riak_pipe_w_pass}, {arg, undefined}]}],
-    Body = {struct, [{name, Key}, {fittings, Fittings}]},
+    Fittings = [generate_fitting()],
+    Body = {struct, [{name, list_to_binary(Key)}, {fittings, Fittings}]},
     mochijson2:encode(Body).
+
+generate_pipeline_name(KeyGen) ->
+    "pipeline_" ++ integer_to_list(KeyGen()).
 
 should_retry({error, send_failed})       -> true;
 should_retry({error, connection_closed}) -> true;
