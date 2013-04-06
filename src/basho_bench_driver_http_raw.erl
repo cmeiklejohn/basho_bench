@@ -34,6 +34,7 @@
                  files,              % List of files to put
                  path_params,        % Params to append on the path
                  solr_path,          % SOLR path for searches
+                 pipeline_path,      % Pipeline path
                  searchgen }).       % Search generator
 
 
@@ -83,6 +84,7 @@ new(Id) ->
     Params = basho_bench_config:get(http_raw_params, ""),
     Disconnect = basho_bench_config:get(http_raw_disconnect_frequency, infinity),
     SolrPath = basho_bench_config:get(http_solr_path, "/solr/test"),
+    PipelinePath = basho_bench_config:get(http_pipeline_path, "/pipelines"),
     SearchGen = case basho_bench_config:get(http_search_generator, undefined) of
                     undefined ->
                         undefined;
@@ -118,6 +120,7 @@ new(Id) ->
                   files = Files,
                   path_params = Params,
                   solr_path = SolrPath,
+                  pipeline_path = PipelinePath,
                   searchgen = SearchGen }}.
 
 run(stat, _, _, State) ->
@@ -237,6 +240,18 @@ run(put_file, _, _, State) ->
         {error, Reason} -> {error, Reason, S3}
     end;
 
+run(pipeline_post, KeyGen, ValueGen, State) ->
+    {NextUrl, S2} = next_url(State),
+    PipelinePath = State#state.pipeline_path,
+    PipelineUrl = pipeline_url(NextUrl, PipelinePath, KeyGen, State#state.path_params),
+    ?DEBUG("Request URL: ~p\n", [PipelineUrl]),
+    case do_post(PipelineUrl, [{body_on_success, true}], ValueGen) of
+        {ok, _Code, _Header, _Body} ->
+            {ok, S2};
+        {error, Reason} ->
+            {error, Reason, S2}
+    end;
+
 run({search, {Qry, Expected}}, _, _, State) ->
     {NextUrl, S2} = next_url(State),
     SolrPath = State#state.solr_path,
@@ -322,6 +337,9 @@ url(BaseUrl, KeyGen, Params) when is_function(KeyGen) ->
     BaseUrl#url { path = lists:concat([BaseUrl#url.path, '/', KeyGen(), Params]) };
 url(BaseUrl, Key, Params) ->
     BaseUrl#url { path = lists:concat([BaseUrl#url.path, '/', Key, Params]) }.
+
+pipeline_url(BaseUrl, PipelinePath, KeyGen, Params) ->
+    BaseUrl#url { path = lists:concat([PipelinePath, '/', KeyGen(), Params]) }.
 
 search_url(BaseUrl, SolrPath, SearchGen) ->
     Params = if is_function(SearchGen) ->
