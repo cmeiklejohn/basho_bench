@@ -240,13 +240,27 @@ run(put_file, _, _, State) ->
         {error, Reason} -> {error, Reason, S3}
     end;
 
+run(pipeline_get, KeyGen, _ValueGen, State) ->
+    {NextUrl, S2} = next_url(State),
+    Key = generate_pipeline_name(KeyGen),
+    PipelinePath = State#state.pipeline_path,
+    PipelineUrl = pipeline_url(NextUrl, PipelinePath, Key, State#state.path_params),
+    ?DEBUG("Pipeline key for listener: ~p.\n", [Key]),
+    case do_get(PipelineUrl) of
+        ok ->
+            {ok, S2};
+        {error, Reason} ->
+            ?DEBUG("Pipeline listener failed: ~p.\n", [Reason]),
+            {error, Reason, S2}
+    end;
+
 run(pipeline_post, KeyGen, ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
     Key = generate_pipeline_name(KeyGen),
     PipelinePath = State#state.pipeline_path,
     PipelineUrl = pipeline_url(NextUrl, PipelinePath, Key, State#state.path_params),
-    ?DEBUG("Pipeline key: ~p.\n", [Key]),
-    case do_post(PipelineUrl, [{'Content-Type', 'application/json'}], ValueGen) of
+    ?DEBUG("Pipeline key for ingest: ~p.\n", [Key]),
+    case do_pipeline_post(PipelineUrl, [{'Content-Type', 'application/json'}], ValueGen) of
         ok ->
             {ok, S2};
         {error, {http_error, "404"}} ->
@@ -412,6 +426,27 @@ do_put(Url, Headers, ValueGen) ->
         {ok, "204", _Header, _Body} ->
             ok;
         {ok, Code, _Header, _Body} ->
+            {error, {http_error, Code}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+do_pipeline_post(Url, Headers, ValueGen) ->
+    DefaultedHeaders = case proplists:get_value('Content-Type', Headers) of
+        undefined ->
+            Headers ++ [{'Content-Type', 'application/octet-stream'}];
+        _ ->
+            Headers
+    end,
+
+    case send_request(Url, DefaultedHeaders,
+                      post, ValueGen(), [{response_format, binary}]) of
+        {ok, "200", _Header, _Body} ->
+            ok;
+        {ok, "201", _Header, _Body} ->
+            ok;
+        {ok, Code, Header, Body} ->
+            ?DEBUG("Pipeline request failed: ~p ~p\n.", [Header, Body]),
             {error, {http_error, Code}};
         {error, Reason} ->
             {error, Reason}
