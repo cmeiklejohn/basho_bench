@@ -445,6 +445,8 @@ do_pipeline_post(Url, Headers, ValueGen) ->
             ok;
         {ok, "201", _Header, _Body} ->
             ok;
+        {ok, "204", _Header, _Body} ->
+            ok;
         {ok, Code, Header, Body} ->
             ?DEBUG("Pipeline request failed: ~p ~p\n.", [Header, Body]),
             {error, {http_error, Code}};
@@ -587,13 +589,22 @@ send_request(Url, Headers, Method, Body, Options, Count) ->
             end
     end.
 
-generate_fitting() ->
-    {struct, [{name, <<"foo">>},
-              {module, <<"riak_pipe_w_pass">>},
-              {arg, <<"">>}]}.
+generate_fittings() ->
+    [{struct, [{name, <<"mapper">>},
+               {module, <<"riak_pipe_w_xform">>},
+               {arg, {struct,
+                      [{module, <<"csm_streaming_test">>},
+                       {function, <<"mapper">>},
+                       {arity, 3}]}}]},
+     {struct, [{name, <<"reducer">>},
+               {module, <<"riak_kv_w_cp_reduce">>},
+               {arg, {struct,
+                      [{module, <<"csm_streaming_test">>},
+                       {function, <<"reducer">>},
+                       {arity, 4}]}}]}].
 
 generate_pipeline(Key) ->
-    Fittings = [generate_fitting()],
+    Fittings = generate_fittings(),
     Body = {struct, [{name, list_to_binary(Key)}, {fittings, Fittings}]},
     mochijson2:encode(Body).
 
