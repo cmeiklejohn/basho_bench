@@ -593,13 +593,13 @@ generate_fittings() ->
     [{struct, [{name, <<"mapper">>},
                {module, <<"riak_pipe_w_xform">>},
                {arg, {struct,
-                      [{module, <<"csm_streaming_test">>},
+                      [{module, <<"riak_kv_cp_benchmark">>},
                        {function, <<"mapper">>},
                        {arity, 3}]}}]},
      {struct, [{name, <<"reducer">>},
                {module, <<"riak_kv_w_cp_reduce">>},
                {arg, {struct,
-                      [{module, <<"csm_streaming_test">>},
+                      [{module, <<"riak_kv_cp_benchmark">>},
                        {function, <<"reducer">>},
                        {arity, 4}]}}]}].
 
