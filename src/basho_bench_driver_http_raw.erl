@@ -474,7 +474,8 @@ do_pipeline_put(Url, Headers, ValueGen) ->
         {ok, "204", _Header, _Body} ->
             ok;
         {ok, Code, Header, Body} ->
-            ?DEBUG("Pipeline request failed: ~p ~p\n.", [Header, Body]),
+            ?DEBUG("Pipeline request failed: ~p ~p ~p\n.",
+                   [Header, Body, Code]),
             {error, {http_error, Code}};
         {error, Reason} ->
             {error, Reason}
@@ -497,7 +498,8 @@ do_pipeline_post(Url, Headers, ValueGen) ->
         {ok, "204", _Header, _Body} ->
             ok;
         {ok, Code, Header, Body} ->
-            ?DEBUG("Pipeline request failed: ~p ~p\n.", [Header, Body]),
+            ?DEBUG("Pipeline request failed: ~p ~p ~p\n.",
+                   [Header, Body, Code]),
             {error, {http_error, Code}};
         {error, Reason} ->
             {error, Reason}
