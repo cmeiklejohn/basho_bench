@@ -269,7 +269,7 @@ run(pipeline_put, KeyGen, ValueGen, State) ->
             PipelinesUrl = pipelines_url(NextUrl, PipelinePath, State#state.path_params),
             PipelinesGen = fun() -> generate_pipeline(Key) end,
             case do_post(PipelinesUrl, [{'Content-Type', 'application/json'}], PipelinesGen) of
-                {ok, _Code, _Header, _Body} ->
+                ok ->
                     {ok, S2};
                 {error, Reason} ->
                     ?DEBUG("Pipeline creation failed: ~p.\n", [Reason]),
@@ -295,7 +295,7 @@ run(pipeline_post, KeyGen, ValueGen, State) ->
             PipelinesUrl = pipelines_url(NextUrl, PipelinePath, State#state.path_params),
             PipelinesGen = fun() -> generate_pipeline(Key) end,
             case do_post(PipelinesUrl, [{'Content-Type', 'application/json'}], PipelinesGen) of
-                {ok, _Code, _Header, _Body} ->
+                ok ->
                     {ok, S2};
                 {error, Reason} ->
                     ?DEBUG("Pipeline creation failed: ~p.\n", [Reason]),
