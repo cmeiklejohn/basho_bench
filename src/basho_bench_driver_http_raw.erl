@@ -270,8 +270,104 @@ run(search, _KeyGen, _ValueGen, State) ->
             {ok, S2};
         {error, Reason} ->
             {error, Reason, S2}
-    end.
+    end;
 
+%% Game completed.
+run({game, completed}, KeyGen, _ValueGen, State) ->
+    Url = build_team_url(KeyGen),
+    Update = generate_score_change_request(KeyGen),
+
+    case do_post(Url,
+                 [{'Content-Type', 'application/json'}],
+                 Update) of
+        ok ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+
+run({team, write}, KeyGen, _ValueGen, State) ->
+    Url = build_team_url(KeyGen),
+    Update = generate_team_create_request(KeyGen),
+
+    case do_post(Url,
+                 [{'Content-Type', 'application/json'}],
+                 Update) of
+        ok ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+
+%% Read information about the team.
+run({team, read}, KeyGen, _ValueGen, State) ->
+    Url = build_team_url(KeyGen),
+
+    case do_get(Url, [{body_on_success, true}]) of
+        {not_found, _Url} ->
+            {ok, State};
+        {ok, _Url, _Headers, _Body} ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+
+%% Remove a player from the team.
+run({team, player, removal}, KeyGen, _ValueGen, State) ->
+    Url = build_team_url(KeyGen),
+
+    case do_get(Url, [{body_on_success, true}]) of
+        {not_found, _Url} ->
+            {ok, State};
+        {ok, _Url, _Headers, Body} ->
+            Members = get_members_from_team_response(Body),
+
+            case length(Members) > 0 of
+                true ->
+                    Member = hd(Members),
+                    Update = generate_member_removal_request(Member),
+                    case do_post(Url,
+                                 [{'Content-Type', 'application/json'}],
+                                 Update) of
+                        ok ->
+                            {ok, State};
+                        {error, Reason} ->
+                            {error, Reason, State}
+                    end;
+                false ->
+                    {ok, State}
+            end;
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+
+%% Add a player to the team.
+run({team, player, addition}, KeyGen, ValueGen, State) ->
+    Url = build_team_url(KeyGen),
+
+    case do_get(Url, [{body_on_success, true}]) of
+        {not_found, _Url} ->
+            {ok, State};
+        {ok, _Url, _Headers, Body} ->
+            Members = get_members_from_team_response(Body),
+
+            case length(Members) < 100 of
+                true ->
+                    Update = generate_member_addition_request(ValueGen),
+                    case do_post(Url,
+                                 [{'Content-Type', 'application/json'}],
+                                 Update) of
+                        ok ->
+                            {ok, State};
+                        {error, Reason} ->
+                            {error, Reason, State}
+                    end;
+                false ->
+                    {ok, State}
+            end;
+        {error, Reason} ->
+            {error, Reason, State}
+    end.
 
 %% ====================================================================
 %% Search Generator API
@@ -379,8 +475,14 @@ do_put(Url, Headers, ValueGen) ->
             {error, Reason}
     end.
 
-do_post(Url, Headers, ValueGen) ->
-    case send_request(Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
+do_post(Url, Headers0, ValueGen) ->
+    Headers = case lists:keymember('Content-Type', 1, Headers0) of
+        false ->
+            Headers0 ++ [{'Content-Type', 'application/octet-stream'}];
+        true ->
+            Headers0
+    end,
+    case send_request(Url, Headers,
                       post, ValueGen(), [{response_format, binary}]) of
         {ok, "201", _Header, _Body} ->
             ok;
@@ -517,3 +619,45 @@ should_retry(_)                          -> false.
 normalize_error(Method, {'EXIT', {timeout, _}})  -> {error, {Method, timeout}};
 normalize_error(Method, {'EXIT', Reason})        -> {error, {Method, 'EXIT', Reason}};
 normalize_error(Method, {error, Reason})         -> {error, {Method, Reason}}.
+
+%% Generators
+
+build_team_url(KeyGen) ->
+    Id = integer_to_list(KeyGen()),
+    #url{host="127.0.0.1",
+         port=8098,
+         path="/types/maps/buckets/teams/datatypes/" ++ Id}.
+
+generate_team_create_request(KeyGen) ->
+    Id = integer_to_list(KeyGen()),
+    Update = {struct, [{name_register, "Team " ++ Id},
+                       {score_counter, 0}]},
+    fun() ->
+            mochijson:encode({struct, [{update, Update}]})
+    end.
+
+get_members_from_team_response(Response) ->
+    {struct, Object} = mochijson:decode(Response),
+    {struct, Attributes} = proplists:get_value("value", Object),
+    {array, Members} = proplists:get_value("members_set", Attributes, {array, []}),
+    Members.
+
+generate_member_removal_request(Member) ->
+    Update = {struct, [{members_set, {struct, [{remove, Member}]}}]},
+    fun() ->
+            mochijson:encode({struct, [{update, Update}]})
+    end.
+
+generate_member_addition_request(ValueGen) ->
+    Value = integer_to_list(ValueGen()),
+    Update = {struct, [{members_set, {struct, [{add, Value}]}}]},
+    fun() ->
+            mochijson:encode({struct, [{update, Update}]})
+    end.
+
+generate_score_change_request(ValueGen) ->
+    Value = ValueGen(),
+    Update = {struct, [{score_counter, Value}]},
+    fun() ->
+            mochijson:encode({struct, [{update, Update}]})
+    end.
